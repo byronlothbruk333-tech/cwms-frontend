@@ -20,11 +20,11 @@ export const Home: React.FC = () => {
       {/* Hero Section */}
       <Box sx={{ textAlign: 'center', mb: 6 }}>
         <Typography variant="h2" gutterBottom sx={{ fontWeight: 700 }}>
-          Welcome to CWMS
+          Welcome to CleanTrack
         </Typography>
         <Typography variant="h5" color="text.secondary" gutterBottom>
-          <i>"City Waste Management System"</i>
-        </Typography>
+  <i>"Smart Waste Management for Cleaner Cities"</i>
+</Typography>
         {!user ? (
           <Button 
             variant="contained" 

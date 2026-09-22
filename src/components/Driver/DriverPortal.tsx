@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Grid,
@@ -13,7 +13,6 @@ import {
   ListItemIcon,
   Chip,
   LinearProgress,
-  Fab,
   Paper,
   Dialog,
   DialogTitle,
@@ -21,6 +20,9 @@ import {
   DialogActions,
   Alert,
   IconButton,
+  CircularProgress,
+  TextField,
+  Fab,
 } from '@mui/material';
 import {
   Route as RouteIcon,
@@ -32,361 +34,375 @@ import {
   Warning,
   Navigation,
   Delete,
+  SkipNext,
+  Refresh,
 } from '@mui/icons-material';
+import {
+  routeService,
+  type Route,
+  type RouteStop,
+} from '../../Services/routeService';
+import { uploadService } from '../../Services/uploadService';
 
-import type {Route} from '../../Services/types';
-import type { RouteStop } from '../../Services/types';
-
-
-
-// Mock route data with complaint types
-const mockRoute: Route = {
-  id: 'R-2024-001',
-  truckId: 'T-001',
-  zone: 'Zone A',
-  suburb: 'Moresby North-West',
-  wards: 'Waigani, Tokarara',
-  status: 'in-progress',
-  scheduledStart: '2024-01-15T06:00:00',
-  scheduledEnd: '2024-01-15T18:00:00',
-  estimatedDuration: 480,
-  stops: [
-    { 
-      id: '1', 
-      address: '123 Main St', 
-      location: { lat: -9.4438, lng: 147.1803 }, 
-      status: 'completed',
-    },
-    { 
-      id: '2', 
-      address: '45 Park Ave', 
-      location: { lat: -9.4450, lng: 147.1850 }, 
-      status: 'completed',
-    },
-    { 
-      id: '3', 
-      address: '78 Beach Rd', 
-      location: { lat: -9.4500, lng: 147.1900 }, 
-      status: 'skipped',
-    },
-    { 
-      id: '4', 
-      address: '22 Hill St', 
-      location: { lat: -9.4550, lng: 147.1950 }, 
-      status: 'pending',
-      isComplaintStop: true,
-      complaintType: 'missed-collection',
-    },
-    { 
-      id: '5', 
-      address: '90 Valley Blvd', 
-      location: { lat: -9.4600, lng: 147.2000 }, 
-      status: 'pending',
-      isComplaintStop: true,
-      complaintType: 'illegal-dumping',
-    },
-  ],
-};
-
+// ============================================
+// COMPONENT
+// ============================================
 export const DriverPortal: React.FC = () => {
-  const [route, setRoute] = useState<Route>(mockRoute);
+  const [route, setRoute] = useState<Route | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
   const [selectedStop, setSelectedStop] = useState<RouteStop | null>(null);
+  const [showSkipDialog, setShowSkipDialog] = useState(false);
+  const [skipReason, setSkipReason] = useState('');
+
+  // Photo dialog state
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [photoType, setPhotoType] = useState<'before' | 'after'>('before');
-  const [currentComplaintType, setCurrentComplaintType] = useState<'missed-collection' | 'illegal-dumping'>('illegal-dumping');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [beforePhotoFile, setBeforePhotoFile] = useState<File | null>(null);
+  const [afterPhotoFile, setAfterPhotoFile] = useState<File | null>(null);
+  const [beforePhotoPreview, setBeforePhotoPreview] = useState<string>('');
+  const [afterPhotoPreview, setAfterPhotoPreview] = useState<string>('');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Photo states for Missed Collection
-  const [missedBeforePhotos, setMissedBeforePhotos] = useState<File[]>([]);
-  const [missedBeforePhotoUrls, setMissedBeforePhotoUrls] = useState<string[]>([]);
-  const [missedAfterPhotos, setMissedAfterPhotos] = useState<File[]>([]);
-  const [missedAfterPhotoUrls, setMissedAfterPhotoUrls] = useState<string[]>([]);
+  // ============================================
+  // LOAD TODAY'S ROUTE
+  // ============================================
+  useEffect(() => {
+    let isMounted = true;
 
-  // Photo states for Illegal Dumping
-  const [dumpBeforePhotos, setDumpBeforePhotos] = useState<File[]>([]);
-  const [dumpBeforePhotoUrls, setDumpBeforePhotoUrls] = useState<string[]>([]);
-  const [dumpAfterPhotos, setDumpAfterPhotos] = useState<File[]>([]);
-  const [dumpAfterPhotoUrls, setDumpAfterPhotoUrls] = useState<string[]>([]);
+    const loadRoute = async () => {
+      setLoading(true);
+      setError('');
 
-  const completedStops = route.stops.filter(s => s.status === 'completed').length;
-  const totalStops = route.stops.length;
-  const progress = (completedStops / totalStops) * 100;
+      try {
+        const data = await routeService.getTodaysRoute();
+        if (isMounted) {
+          setRoute(data.route);
+        }
+      } catch (err: unknown) {
+        const error = err as {
+          response?: { data?: { message?: string; error?: string } };
+        };
+        if (isMounted) {
+          setError(
+            error.response?.data?.message ||
+              error.response?.data?.error ||
+              "Failed to load today's route. Please try again."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
 
-  // Navigate to stop using Google Maps
+    loadRoute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // ============================================
+  // REFRESH ROUTE
+  // ============================================
+  const refreshRoute = async () => {
+    setRefreshing(true);
+    try {
+      const data = await routeService.getTodaysRoute();
+      setRoute(data.route);
+    } catch (err) {
+      console.error('Refresh failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ============================================
+  // PROGRESS
+  // ============================================
+  const completedStops =
+    route?.stops?.filter((s) => s.status === 'completed').length || 0;
+  const totalStops = route?.stops?.length || 0;
+  const progress = totalStops > 0 ? (completedStops / totalStops) * 100 : 0;
+
+  // ============================================
+  // NAVIGATE TO STOP
+  // ============================================
   const navigateToStop = (stop: RouteStop) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${stop.location.lat},${stop.location.lng}&travelmode=driving`;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${stop.latitude},${stop.longitude}&travelmode=driving`;
     window.open(url, '_blank');
+  };
+
+  // ============================================
+  // PHOTO HANDLING
+  // ============================================
+  const openPhotoDialog = (type: 'before' | 'after') => {
+    setPhotoType(type);
+    setShowPhotoDialog(true);
   };
 
   const handlePhotoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (!files) return;
+    if (!files || files.length === 0) return;
 
-    const newFiles = Array.from(files);
-    const newPhotoUrls = newFiles.map(file => URL.createObjectURL(file));
+    const file = files[0];
+    const previewUrl = URL.createObjectURL(file);
 
-    // Check which complaint type and photo type we're dealing with
-    if (currentComplaintType === 'missed-collection') {
-      if (photoType === 'before') {
-        setMissedBeforePhotos([...missedBeforePhotos, ...newFiles]);
-        setMissedBeforePhotoUrls([...missedBeforePhotoUrls, ...newPhotoUrls]);
-      } else if (photoType === 'after') {
-        setMissedAfterPhotos([...missedAfterPhotos, ...newFiles]);
-        setMissedAfterPhotoUrls([...missedAfterPhotoUrls, ...newPhotoUrls]);
-      }
-    } else if (currentComplaintType === 'illegal-dumping') {
-      if (photoType === 'before') {
-        setDumpBeforePhotos([...dumpBeforePhotos, ...newFiles]);
-        setDumpBeforePhotoUrls([...dumpBeforePhotoUrls, ...newPhotoUrls]);
-      } else if (photoType === 'after') {
-        setDumpAfterPhotos([...dumpAfterPhotos, ...newFiles]);
-        setDumpAfterPhotoUrls([...dumpAfterPhotoUrls, ...newPhotoUrls]);
-      }
-    }
-
-    // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleRemovePhoto = (
-    index: number, 
-    type: 'before' | 'after',
-    complaintType: 'missed-collection' | 'illegal-dumping'
-  ) => {
-    if (complaintType === 'missed-collection') {
-      if (type === 'before') {
-        URL.revokeObjectURL(missedBeforePhotoUrls[index]);
-        const newPhotos = [...missedBeforePhotos];
-        const newPhotoUrls = [...missedBeforePhotoUrls];
-        newPhotos.splice(index, 1);
-        newPhotoUrls.splice(index, 1);
-        setMissedBeforePhotos(newPhotos);
-        setMissedBeforePhotoUrls(newPhotoUrls);
-      } else if (type === 'after') {
-        URL.revokeObjectURL(missedAfterPhotoUrls[index]);
-        const newPhotos = [...missedAfterPhotos];
-        const newPhotoUrls = [...missedAfterPhotoUrls];
-        newPhotos.splice(index, 1);
-        newPhotoUrls.splice(index, 1);
-        setMissedAfterPhotos(newPhotos);
-        setMissedAfterPhotoUrls(newPhotoUrls);
-      }
-    } else if (complaintType === 'illegal-dumping') {
-      if (type === 'before') {
-        URL.revokeObjectURL(dumpBeforePhotoUrls[index]);
-        const newPhotos = [...dumpBeforePhotos];
-        const newPhotoUrls = [...dumpBeforePhotoUrls];
-        newPhotos.splice(index, 1);
-        newPhotoUrls.splice(index, 1);
-        setDumpBeforePhotos(newPhotos);
-        setDumpBeforePhotoUrls(newPhotoUrls);
-      } else if (type === 'after') {
-        URL.revokeObjectURL(dumpAfterPhotoUrls[index]);
-        const newPhotos = [...dumpAfterPhotos];
-        const newPhotoUrls = [...dumpAfterPhotoUrls];
-        newPhotos.splice(index, 1);
-        newPhotoUrls.splice(index, 1);
-        setDumpAfterPhotos(newPhotos);
-        setDumpAfterPhotoUrls(newPhotoUrls);
-      }
-    }
-  };
-
-  const openPhotoDialog = (
-    type: 'before' | 'after',
-    complaintType: 'missed-collection' | 'illegal-dumping'
-  ) => {
-    setPhotoType(type);
-    setCurrentComplaintType(complaintType);
-    setShowPhotoDialog(true);
-  };
-
-  const getBeforePhotos = () => {
-    if (currentComplaintType === 'missed-collection') {
-      return missedBeforePhotos;
+    if (photoType === 'before') {
+      if (beforePhotoPreview) URL.revokeObjectURL(beforePhotoPreview);
+      setBeforePhotoFile(file);
+      setBeforePhotoPreview(previewUrl);
     } else {
-      return dumpBeforePhotos;
+      if (afterPhotoPreview) URL.revokeObjectURL(afterPhotoPreview);
+      setAfterPhotoFile(file);
+      setAfterPhotoPreview(previewUrl);
     }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const getAfterPhotos = () => {
-    if (currentComplaintType === 'missed-collection') {
-      return missedAfterPhotos;
+  const removePhoto = (type: 'before' | 'after') => {
+    if (type === 'before') {
+      if (beforePhotoPreview) URL.revokeObjectURL(beforePhotoPreview);
+      setBeforePhotoFile(null);
+      setBeforePhotoPreview('');
     } else {
-      return dumpAfterPhotos;
+      if (afterPhotoPreview) URL.revokeObjectURL(afterPhotoPreview);
+      setAfterPhotoFile(null);
+      setAfterPhotoPreview('');
     }
   };
 
-  const getBeforePhotoUrls = () => {
-    if (currentComplaintType === 'missed-collection') {
-      return missedBeforePhotoUrls;
-    } else {
-      return dumpBeforePhotoUrls;
-    }
-  };
+  // ============================================
+  // COMPLETE STOP
+  // ============================================
+  const handleCompleteStop = async (stop: RouteStop) => {
+    if (!route) return;
 
-  const getAfterPhotoUrls = () => {
-    if (currentComplaintType === 'missed-collection') {
-      return missedAfterPhotoUrls;
-    } else {
-      return dumpAfterPhotoUrls;
-    }
-  };
-
-  const handleCompleteStop = (stop: RouteStop) => {
-    // Check if complaint stop requires photos
-    if (stop.isComplaintStop && stop.complaintType === 'missed-collection') {
-      // For missed collection, check if we have photos for this specific stop
-      // We need to check if this stop has any photos stored
-      const hasBefore = missedBeforePhotos.length > 0;
-      const hasAfter = missedAfterPhotos.length > 0;
-      
-      if (!hasBefore || !hasAfter) {
-        alert('Please take both "Before" and "After" photos for this missed collection complaint.');
-        return;
-      }
-    }
-    
-    if (stop.isComplaintStop && stop.complaintType === 'illegal-dumping') {
-      const hasBefore = dumpBeforePhotos.length > 0;
-      const hasAfter = dumpAfterPhotos.length > 0;
-      
-      if (!hasBefore || !hasAfter) {
-        alert('Please take both "Before" and "After" photos for this illegal dumping report.');
+    if (stop.isComplaintStop) {
+      if (!beforePhotoFile || !afterPhotoFile) {
+        alert(
+          'Please take both "Before" and "After" photos for this complaint stop.'
+        );
         return;
       }
     }
 
-    setRoute((prev: Route) => ({
-      ...prev,
-      stops: prev.stops.map((s: RouteStop) => {
-        if (s.id === stop.id) {
-          return {
-            ...s,
-            status: 'completed' as const,
-            completedAt: new Date().toISOString(),
-            beforePhoto: 'photos_taken',
-            afterPhoto: 'photos_taken',
-          };
-        }
-        return s;
-      }),
-    }));
-    
-    setSelectedStop(null);
-    // Reset all photo states when completing a stop
-    setMissedBeforePhotos([]);
-    setMissedBeforePhotoUrls([]);
-    setMissedAfterPhotos([]);
-    setMissedAfterPhotoUrls([]);
-    setDumpBeforePhotos([]);
-    setDumpBeforePhotoUrls([]);
-    setDumpAfterPhotos([]);
-    setDumpAfterPhotoUrls([]);
+    setActionLoading(true);
+    try {
+      let beforePhotoUrl = '';
+      let afterPhotoUrl = '';
+
+      if (stop.isComplaintStop && beforePhotoFile && afterPhotoFile) {
+        const uploadResult = await uploadService.uploadBeforeAfter(
+          beforePhotoFile,
+          afterPhotoFile
+        );
+        beforePhotoUrl = uploadResult.beforePhoto || '';
+        afterPhotoUrl = uploadResult.afterPhoto || '';
+      }
+
+      const response = await routeService.completeStop(route.id, stop.id, {
+        beforePhoto: beforePhotoUrl || undefined,
+        afterPhoto: afterPhotoUrl || undefined,
+      });
+
+      setRoute((prev) => {
+        if (!prev || !prev.stops) return prev;
+        return {
+          ...prev,
+          completedStops: response.routeProgress.completedStops,
+          status: response.routeProgress.routeStatus,
+          stops: prev.stops.map((s) => (s.id === stop.id ? response.stop : s)),
+        };
+      });
+
+      removePhoto('before');
+      removePhoto('after');
+      setSelectedStop(null);
+    } catch (err: unknown) {
+      const error = err as {
+        response?: { data?: { message?: string; error?: string } };
+      };
+      alert(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          'Failed to complete stop. Please try again.'
+      );
+    } finally {
+      setActionLoading(false);
+    }
   };
 
+  // ============================================
+  // SKIP STOP
+  // ============================================
+  const handleOpenSkipDialog = () => {
+    setSkipReason('');
+    setShowSkipDialog(true);
+  };
+
+  const handleSkipStop = async () => {
+    if (!route || !selectedStop) return;
+
+    if (!skipReason.trim()) {
+      alert('Please provide a reason for skipping');
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const response = await routeService.skipStop(
+        route.id,
+        selectedStop.id,
+        skipReason
+      );
+
+      setRoute((prev) => {
+        if (!prev || !prev.stops) return prev;
+        return {
+          ...prev,
+          stops: prev.stops.map((s) =>
+            s.id === selectedStop.id ? response.stop : s
+          ),
+        };
+      });
+
+      setShowSkipDialog(false);
+      setSkipReason('');
+      setSelectedStop(null);
+    } catch (err: unknown) {
+      const error = err as {
+        response?: { data?: { message?: string; error?: string } };
+      };
+      alert(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          'Failed to skip stop. Please try again.'
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ============================================
+  // HELPERS
+  // ============================================
   const getComplaintLabel = (stop: RouteStop) => {
     if (!stop.isComplaintStop) return null;
-    switch(stop.complaintType) {
-      case 'missed-collection': return '⚠️ Missed Collection';
-      case 'illegal-dumping': return '🚯 Illegal Dumping';
-      default: return '⚠️ Complaint';
+    switch (stop.complaintType) {
+      case 'missed-collection':
+        return '⚠️ Missed Collection';
+      case 'illegal-dumping':
+        return '🚯 Illegal Dumping';
+      default:
+        return '⚠️ Complaint';
     }
   };
 
-  const getComplaintColor = (stop: RouteStop) => {
-    if (!stop.isComplaintStop) return 'default';
-    switch(stop.complaintType) {
-      case 'missed-collection': return 'warning' as const;
-      case 'illegal-dumping': return 'error' as const;
-      default: return 'info' as const;
+  const getComplaintColor = (
+    stop: RouteStop
+  ): 'warning' | 'error' | 'info' => {
+    if (!stop.isComplaintStop) return 'info';
+    switch (stop.complaintType) {
+      case 'missed-collection':
+        return 'warning';
+      case 'illegal-dumping':
+        return 'error';
+      default:
+        return 'info';
     }
   };
 
-  const renderPhotoPreviews = (
-    urls: string[], 
-    type: 'before' | 'after',
-    complaintType: 'missed-collection' | 'illegal-dumping'
-  ) => {
-    if (urls.length === 0) return null;
-    
+  // ============================================
+  // LOADING / ERROR
+  // ============================================
+  if (loading) {
     return (
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-        {urls.map((url, index) => (
-          <Box
-            key={index}
-            sx={{
-              position: 'relative',
-              width: 80,
-              height: 80,
-              border: '1px solid #e0e0e0',
-              borderRadius: 1,
-              overflow: 'hidden',
-            }}
-          >
-            <img
-              src={url}
-              alt={`${type} photo ${index + 1}`}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-              }}
-            />
-            <IconButton
-              size="small"
-              sx={{
-                position: 'absolute',
-                top: 2,
-                right: 2,
-                bgcolor: 'rgba(0,0,0,0.6)',
-                color: 'white',
-                '&:hover': {
-                  bgcolor: 'rgba(0,0,0,0.8)',
-                },
-                width: 20,
-                height: 20,
-              }}
-              onClick={() => handleRemovePhoto(index, type, complaintType)}
-            >
-              <Delete sx={{ fontSize: 12 }} />
-            </IconButton>
-          </Box>
-        ))}
-      </Box>
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+          <CircularProgress />
+        </Box>
+      </Container>
     );
-  };
+  }
 
+  if (error && !route) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
+  }
+
+  if (!route) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Alert severity="info">
+          No route scheduled for today. Check back later.
+        </Alert>
+      </Container>
+    );
+  }
+
+  // ============================================
+  // RENDER
+  // ============================================
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
       <Grid container spacing={3}>
         {/* Header */}
         <Grid size={{ xs: 12 }}>
           <Paper sx={{ p: 3, bgcolor: 'primary.main', color: 'white' }}>
-            <Grid container spacing={2} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+            <Grid
+              container
+              spacing={2}
+              sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+            >
               <Grid size="auto">
                 <Typography variant="h5">
                   <DirectionsCar sx={{ mr: 1, verticalAlign: 'middle' }} />
-                 Truck ID: {route.truckId} 
+                  Today's Route
                 </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                   Today's Route:{route.zone} | {route.suburb} | {route.wards}
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                  Truck: {route.truck?.truckId || 'N/A'} | Zone: {route.zone} |{' '}
+                  {route.suburb}
                 </Typography>
               </Grid>
               <Grid size="auto">
-                <Chip
-                  label={route.status.toUpperCase()}
-                  color={route.status === 'in-progress' ? 'warning' : 'success'}
-                  sx={{ color: 'white' }}
-                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Chip
+                    label={route.status.toUpperCase().replace('-', ' ')}
+                    color={
+                      route.status === 'in-progress' ? 'warning' : 'success'
+                    }
+                    sx={{ color: 'white' }}
+                  />
+                  <IconButton
+                    color="inherit"
+                    onClick={refreshRoute}
+                    disabled={refreshing}
+                    sx={{ color: 'white' }}
+                    title="Refresh route"
+                  >
+                    {refreshing ? (
+                      <CircularProgress size={20} color="inherit" />
+                    ) : (
+                      <Refresh />
+                    )}
+                  </IconButton>
+                </Box>
               </Grid>
             </Grid>
           </Paper>
         </Grid>
 
-        {/* Progress Section */}
+        {/* Progress */}
         <Grid size={{ xs: 12 }}>
           <Card>
             <CardContent>
@@ -395,15 +411,13 @@ export const DriverPortal: React.FC = () => {
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ flex: 1 }}>
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={progress} 
+                  <LinearProgress
+                    variant="determinate"
+                    value={progress}
                     sx={{ height: 10, borderRadius: 5 }}
                   />
                 </Box>
-                <Typography variant="h6">
-                  {Math.round(progress)}%
-                </Typography>
+                <Typography variant="h6">{Math.round(progress)}%</Typography>
                 <Typography variant="body2" color="text.secondary">
                   {completedStops}/{totalStops} stops
                 </Typography>
@@ -412,34 +426,30 @@ export const DriverPortal: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Main Content - Stops List */}
+        {/* Stops List */}
         <Grid size={{ xs: 12, md: 7 }}>
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="h6"
+                gutterBottom
+                sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+              >
                 <Schedule /> Stops ({totalStops})
               </Typography>
               <List>
-                {route.stops.map((stop, index) => (
+                {route.stops?.map((stop, index) => (
                   <ListItem
                     key={stop.id}
-                    onClick={() => {
-                      setSelectedStop(stop);
-                      // Reset photo states when selecting new stop
-                      setMissedBeforePhotos([]);
-                      setMissedBeforePhotoUrls([]);
-                      setMissedAfterPhotos([]);
-                      setMissedAfterPhotoUrls([]);
-                      setDumpBeforePhotos([]);
-                      setDumpBeforePhotoUrls([]);
-                      setDumpAfterPhotos([]);
-                      setDumpAfterPhotoUrls([]);
-                    }}
+                    onClick={() => setSelectedStop(stop)}
                     sx={{
                       cursor: 'pointer',
                       borderLeft: `4px solid ${
-                        stop.status === 'completed' ? '#4CAF50' :
-                        stop.status === 'skipped' ? '#f44336' : '#FFA726'
+                        stop.status === 'completed'
+                          ? '#4CAF50'
+                          : stop.status === 'skipped'
+                          ? '#f44336'
+                          : '#FFA726'
                       }`,
                       mb: 1,
                       bgcolor: 'background.paper',
@@ -450,22 +460,29 @@ export const DriverPortal: React.FC = () => {
                     <ListItemIcon>
                       {stop.status === 'completed' ? (
                         <CheckCircle color="success" />
-                      ) : stop.status === 'pending' ? (
-                        <LocationOn color="warning" />
+                      ) : stop.status === 'skipped' ? (
+                        <SkipNext color="error" />
                       ) : (
-                        <Warning color="error" />
+                        <LocationOn color="warning" />
                       )}
                     </ListItemIcon>
                     <ListItemText
                       primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            flexWrap: 'wrap',
+                          }}
+                        >
                           <Typography variant="body1">
                             {index + 1}. {stop.address}
                           </Typography>
                           {stop.isComplaintStop && (
-                            <Chip 
+                            <Chip
                               label={getComplaintLabel(stop)}
-                              size="small" 
+                              size="small"
                               color={getComplaintColor(stop)}
                               variant="outlined"
                             />
@@ -475,7 +492,10 @@ export const DriverPortal: React.FC = () => {
                       secondary={
                         <Typography variant="caption" color="text.secondary">
                           Status: {stop.status.toUpperCase()}
-                          {stop.completedAt && ` | Completed: ${new Date(stop.completedAt).toLocaleTimeString()}`}
+                          {stop.completedAt &&
+                            ` | Completed: ${new Date(
+                              stop.completedAt
+                            ).toLocaleTimeString()}`}
                         </Typography>
                       }
                     />
@@ -488,6 +508,7 @@ export const DriverPortal: React.FC = () => {
                           e.stopPropagation();
                           handleCompleteStop(stop);
                         }}
+                        disabled={actionLoading}
                       >
                         Complete
                       </Button>
@@ -499,7 +520,7 @@ export const DriverPortal: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Right Panel - Selected Stop Details */}
+        {/* Selected Stop Details */}
         <Grid size={{ xs: 12, md: 5 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
@@ -515,31 +536,40 @@ export const DriverPortal: React.FC = () => {
                     <Typography variant="body1" gutterBottom>
                       {selectedStop.address}
                     </Typography>
-                    
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 2 }}
+                    >
                       Status
                     </Typography>
-                    <Chip 
+                    <Chip
                       label={selectedStop.status.toUpperCase()}
-                      color={selectedStop.status === 'completed' ? 'success' : 
-                             selectedStop.status === 'pending' ? 'warning' : 'error'}
+                      color={
+                        selectedStop.status === 'completed'
+                          ? 'success'
+                          : selectedStop.status === 'pending'
+                          ? 'warning'
+                          : 'error'
+                      }
                     />
 
-                    {/* Complaint Alert */}
                     {selectedStop.isComplaintStop && (
-                      <Alert 
-                        severity={selectedStop.complaintType === 'illegal-dumping' ? 'error' : 'warning'} 
+                      <Alert
+                        severity={
+                          selectedStop.complaintType === 'illegal-dumping'
+                            ? 'error'
+                            : 'warning'
+                        }
                         sx={{ mt: 2 }}
                       >
-                        <strong>
-                          {selectedStop.complaintType === 'illegal-dumping' 
-                            ? '🚯 Illegal Dumping Report' 
-                            : '⚠️ Missed Collection Complaint'}
-                        </strong>
-                        <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
-                          {selectedStop.complaintType === 'illegal-dumping' 
-                            ? 'Before & After photos required for this report.'
-                            : 'Before & After photos required for this complaint.'}
+                        <strong>{getComplaintLabel(selectedStop)}</strong>
+                        <Typography
+                          variant="caption"
+                          sx={{ display: 'block', mt: 0.5 }}
+                        >
+                          Before & After photos required for this stop.
                         </Typography>
                       </Alert>
                     )}
@@ -549,9 +579,11 @@ export const DriverPortal: React.FC = () => {
                         Quick Actions
                       </Typography>
                       <Grid container spacing={1} sx={{ mt: 1 }}>
-                        <Grid size={{ xs: selectedStop.isComplaintStop ? 6 : 12 }}>
-                          <Button 
-                            variant="outlined" 
+                        <Grid
+                          size={{ xs: selectedStop.isComplaintStop ? 6 : 12 }}
+                        >
+                          <Button
+                            variant="outlined"
                             fullWidth
                             startIcon={<Navigation />}
                             onClick={() => navigateToStop(selectedStop)}
@@ -560,204 +592,196 @@ export const DriverPortal: React.FC = () => {
                             Navigate
                           </Button>
                         </Grid>
-                        
-                        {/* Photo Actions for Complaint Stops - Both types now have Before & After */}
-                        {selectedStop.isComplaintStop && selectedStop.status !== 'completed' && (
-                          <>
-                            <Grid size={{ xs: 6 }}>
-                              <Button 
-                                variant={
-                                  (selectedStop.complaintType === 'missed-collection' 
-                                    ? missedBeforePhotos 
-                                    : dumpBeforePhotos
-                                  ).length > 0 ? "contained" : "outlined"
-                                }
-                                fullWidth
-                                size="small"
-                                startIcon={<PhotoCamera />}
-                                onClick={() => openPhotoDialog('before', selectedStop.complaintType!)}
-                                color={
-                                  (selectedStop.complaintType === 'missed-collection' 
-                                    ? missedBeforePhotos 
-                                    : dumpBeforePhotos
-                                  ).length > 0 ? "success" : "primary"
-                                }
-                              >
-                                {(selectedStop.complaintType === 'missed-collection' 
-                                  ? missedBeforePhotos 
-                                  : dumpBeforePhotos
-                                ).length > 0 
-                                  ? `✅ Before (${(selectedStop.complaintType === 'missed-collection' ? missedBeforePhotos : dumpBeforePhotos).length})` 
-                                  : '📸 Before'}
-                              </Button>
-                            </Grid>
-                            <Grid size={{ xs: 6 }}>
-                              <Button 
-                                variant={
-                                  (selectedStop.complaintType === 'missed-collection' 
-                                    ? missedAfterPhotos 
-                                    : dumpAfterPhotos
-                                  ).length > 0 ? "contained" : "outlined"
-                                }
-                                fullWidth
-                                size="small"
-                                startIcon={<PhotoCamera />}
-                                onClick={() => openPhotoDialog('after', selectedStop.complaintType!)}
-                                color={
-                                  (selectedStop.complaintType === 'missed-collection' 
-                                    ? missedAfterPhotos 
-                                    : dumpAfterPhotos
-                                  ).length > 0 ? "success" : "primary"
-                                }
-                              >
-                                {(selectedStop.complaintType === 'missed-collection' 
-                                  ? missedAfterPhotos 
-                                  : dumpAfterPhotos
-                                ).length > 0 
-                                  ? `✅ After (${(selectedStop.complaintType === 'missed-collection' ? missedAfterPhotos : dumpAfterPhotos).length})` 
-                                  : '📸 After'}
-                              </Button>
-                            </Grid>
-                          </>
-                        )}
-                      </Grid>
 
-                      {/* Photo previews for all complaint stops */}
-                      {selectedStop.isComplaintStop && selectedStop.status !== 'completed' && (
-                        <Box sx={{ mt: 2 }}>
-                          {selectedStop.complaintType === 'missed-collection' ? (
-                            // Missed Collection photos
+                        {selectedStop.isComplaintStop &&
+                          selectedStop.status !== 'completed' && (
                             <>
-                              {missedBeforePhotos.length > 0 && (
-                                <Box sx={{ mb: 1 }}>
-                                  <Typography variant="caption" color="text.secondary">
-                                    Before Photos:
-                                  </Typography>
-                                  {renderPhotoPreviews(missedBeforePhotoUrls, 'before', 'missed-collection')}
-                                </Box>
-                              )}
-                              {missedAfterPhotos.length > 0 && (
-                                <Box>
-                                  <Typography variant="caption" color="text.secondary">
-                                    After Photos:
-                                  </Typography>
-                                  {renderPhotoPreviews(missedAfterPhotoUrls, 'after', 'missed-collection')}
-                                </Box>
-                              )}
-                            </>
-                          ) : (
-                            // Illegal Dumping photos
-                            <>
-                              {dumpBeforePhotos.length > 0 && (
-                                <Box sx={{ mb: 1 }}>
-                                  <Typography variant="caption" color="text.secondary">
-                                    Before Photos:
-                                  </Typography>
-                                  {renderPhotoPreviews(dumpBeforePhotoUrls, 'before', 'illegal-dumping')}
-                                </Box>
-                              )}
-                              {dumpAfterPhotos.length > 0 && (
-                                <Box>
-                                  <Typography variant="caption" color="text.secondary">
-                                    After Photos:
-                                  </Typography>
-                                  {renderPhotoPreviews(dumpAfterPhotoUrls, 'after', 'illegal-dumping')}
-                                </Box>
-                              )}
+                              <Grid size={{ xs: 6 }}>
+                                <Button
+                                  variant={
+                                    beforePhotoFile ? 'contained' : 'outlined'
+                                  }
+                                  fullWidth
+                                  size="small"
+                                  startIcon={<PhotoCamera />}
+                                  onClick={() => openPhotoDialog('before')}
+                                  color={beforePhotoFile ? 'success' : 'primary'}
+                                >
+                                  {beforePhotoFile ? '✅ Before' : '📸 Before'}
+                                </Button>
+                              </Grid>
+                              <Grid size={{ xs: 6 }}>
+                                <Button
+                                  variant={
+                                    afterPhotoFile ? 'contained' : 'outlined'
+                                  }
+                                  fullWidth
+                                  size="small"
+                                  startIcon={<PhotoCamera />}
+                                  onClick={() => openPhotoDialog('after')}
+                                  color={afterPhotoFile ? 'success' : 'primary'}
+                                >
+                                  {afterPhotoFile ? '✅ After' : '📸 After'}
+                                </Button>
+                              </Grid>
                             </>
                           )}
-                        </Box>
-                      )}
+                      </Grid>
 
-                      {/* Photo Status Messages */}
-                      {selectedStop.isComplaintStop && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                          {(() => {
-                            let beforeCount = 0;
-                            let afterCount = 0;
-                            
-                            if (selectedStop.complaintType === 'missed-collection') {
-                              beforeCount = missedBeforePhotos.length;
-                              afterCount = missedAfterPhotos.length;
-                            } else {
-                              beforeCount = dumpBeforePhotos.length;
-                              afterCount = dumpAfterPhotos.length;
-                            }
-                            
-                            if (beforeCount > 0 && afterCount > 0) {
-                              return `✅ Both photos captured (${beforeCount} before, ${afterCount} after)`;
-                            } else if (beforeCount > 0) {
-                              return '⚠️ Please take "After" photo';
-                            } else {
-                              return '⚠️ Please take "Before" and "After" photos';
-                            }
-                          })()}
-                        </Typography>
-                      )}
+                      {selectedStop.isComplaintStop &&
+                        selectedStop.status !== 'completed' && (
+                          <Box sx={{ mt: 2 }}>
+                            {beforePhotoPreview && (
+                              <Box sx={{ mb: 1 }}>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                >
+                                  Before Photo:
+                                </Typography>
+                                <Box
+                                  sx={{
+                                    position: 'relative',
+                                    width: 100,
+                                    height: 100,
+                                    mt: 1,
+                                  }}
+                                >
+                                  <img
+                                    src={beforePhotoPreview}
+                                    alt="Before"
+                                    style={{
+                                      width: '100%',
+                                      height: '100%',
+                                      objectFit: 'cover',
+                                      borderRadius: 8,
+                                    }}
+                                  />
+                                  <IconButton
+                                    size="small"
+                                    sx={{
+                                      position: 'absolute',
+                                      top: 2,
+                                      right: 2,
+                                      bgcolor: 'rgba(0,0,0,0.6)',
+                                      color: 'white',
+                                    }}
+                                    onClick={() => removePhoto('before')}
+                                  >
+                                    <Delete sx={{ fontSize: 14 }} />
+                                  </IconButton>
+                                </Box>
+                              </Box>
+                            )}
+                            {afterPhotoPreview && (
+                              <Box>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                >
+                                  After Photo:
+                                </Typography>
+                                <Box
+                                  sx={{
+                                    position: 'relative',
+                                    width: 100,
+                                    height: 100,
+                                    mt: 1,
+                                  }}
+                                >
+                                  <img
+                                    src={afterPhotoPreview}
+                                    alt="After"
+                                    style={{
+                                      width: '100%',
+                                      height: '100%',
+                                      objectFit: 'cover',
+                                      borderRadius: 8,
+                                    }}
+                                  />
+                                  <IconButton
+                                    size="small"
+                                    sx={{
+                                      position: 'absolute',
+                                      top: 2,
+                                      right: 2,
+                                      bgcolor: 'rgba(0,0,0,0.6)',
+                                      color: 'white',
+                                    }}
+                                    onClick={() => removePhoto('after')}
+                                  >
+                                    <Delete sx={{ fontSize: 14 }} />
+                                  </IconButton>
+                                </Box>
+                              </Box>
+                            )}
+                          </Box>
+                        )}
 
-                      <Button 
-                        variant="contained" 
+                      <Button
+                        variant="contained"
                         fullWidth
-                        startIcon={<CheckCircle />}
+                        startIcon={
+                          actionLoading ? (
+                            <CircularProgress size={20} color="inherit" />
+                          ) : (
+                            <CheckCircle />
+                          )
+                        }
                         onClick={() => handleCompleteStop(selectedStop)}
                         disabled={
+                          actionLoading ||
                           selectedStop.status === 'completed' ||
-                          (selectedStop.isComplaintStop && 
-                            (() => {
-                              let beforeCount = 0;
-                              let afterCount = 0;
-                              
-                              if (selectedStop.complaintType === 'missed-collection') {
-                                beforeCount = missedBeforePhotos.length;
-                                afterCount = missedAfterPhotos.length;
-                              } else {
-                                beforeCount = dumpBeforePhotos.length;
-                                afterCount = dumpAfterPhotos.length;
-                              }
-                              
-                              return beforeCount === 0 || afterCount === 0;
-                            })()
-                          )
+                          (selectedStop.isComplaintStop &&
+                            (!beforePhotoFile || !afterPhotoFile))
                         }
                         sx={{ mt: 2 }}
                       >
-                        {selectedStop.isComplaintStop && 
-                          (() => {
-                            let beforeCount = 0;
-                            let afterCount = 0;
-                            
-                            if (selectedStop.complaintType === 'missed-collection') {
-                              beforeCount = missedBeforePhotos.length;
-                              afterCount = missedAfterPhotos.length;
-                            } else {
-                              beforeCount = dumpBeforePhotos.length;
-                              afterCount = dumpAfterPhotos.length;
-                            }
-                            
-                            if (beforeCount === 0 || afterCount === 0) {
-                              return '📸 Take Required Photos First';
-                            }
-                            return selectedStop.status === 'completed' ? '✅ Completed' : 'Complete Stop';
-                          })()
-                        }
+                        {actionLoading
+                          ? 'Processing...'
+                          : selectedStop.isComplaintStop &&
+                            (!beforePhotoFile || !afterPhotoFile)
+                          ? '📸 Take Both Photos First'
+                          : selectedStop.status === 'completed'
+                          ? '✅ Completed'
+                          : 'Complete Stop'}
                       </Button>
+
+                      {selectedStop.status === 'pending' && (
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          fullWidth
+                          startIcon={<SkipNext />}
+                          onClick={handleOpenSkipDialog}
+                          disabled={actionLoading}
+                          sx={{ mt: 1 }}
+                        >
+                          Skip Stop
+                        </Button>
+                      )}
                     </Box>
 
-                    <Box sx={{ mt: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                    <Box
+                      sx={{
+                        mt: 3,
+                        p: 2,
+                        bgcolor: '#f5f5f5',
+                        borderRadius: 1,
+                      }}
+                    >
                       <Typography variant="caption" color="text.secondary">
-                        💡 Tip: Before & After photos are required for all complaint stops
-                        {selectedStop.isComplaintStop && selectedStop.complaintType === 'illegal-dumping' 
-                          ? ' (Illegal Dumping)' 
-                          : selectedStop.isComplaintStop && selectedStop.complaintType === 'missed-collection'
-                            ? ' (Missed Collection)'
-                            : ''}
+                        💡 Tip: Before & After photos are required for all
+                        complaint stops
                       </Typography>
                     </Box>
                   </Box>
                 </>
               ) : (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <RouteIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
+                  <RouteIcon
+                    sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }}
+                  />
                   <Typography variant="body1" color="text.secondary">
                     Select a stop from the list to view details and take action
                   </Typography>
@@ -768,48 +792,39 @@ export const DriverPortal: React.FC = () => {
         </Grid>
       </Grid>
 
-      {/* Photo Upload Dialog - Same design as Citizen Portal */}
-      <Dialog 
-        open={showPhotoDialog} 
+      {/* Photo Upload Dialog */}
+      <Dialog
+        open={showPhotoDialog}
         onClose={() => setShowPhotoDialog(false)}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle>
-          {photoType === 'before' && '📸 Take "Before" Photo'}
-          {photoType === 'after' && '📸 Take "After" Photo'}
+          {photoType === 'before'
+            ? '📸 Take "Before" Photo'
+            : '📸 Take "After" Photo'}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ py: 2 }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              {photoType === 'before' && `Take a photo showing the site BEFORE ${
-                currentComplaintType === 'missed-collection' ? 'collection' : 'cleanup'
-              }.`}
-              {photoType === 'after' && `Take a photo showing the site AFTER ${
-                currentComplaintType === 'missed-collection' ? 'collection' : 'cleanup'
-              }.`}
+              {photoType === 'before'
+                ? 'Take a photo showing the site BEFORE collection.'
+                : 'Take a photo showing the site AFTER collection.'}
             </Typography>
-            
-            <Alert 
-              severity={
-                photoType === 'before' ? 'warning' : 'success'
-              } 
+
+            <Alert
+              severity={photoType === 'before' ? 'warning' : 'success'}
               sx={{ mt: 1, mb: 2 }}
             >
-              {photoType === 'before' && `This photo serves as evidence of the ${
-                currentComplaintType === 'missed-collection' ? 'missed collection' : 'illegal dumping'
-              }`}
-              {photoType === 'after' && `This photo confirms the ${
-                currentComplaintType === 'missed-collection' ? 'collection' : 'issue'
-              } has been resolved`}
+              {photoType === 'before'
+                ? 'This photo serves as evidence of the reported issue'
+                : 'This photo confirms the issue has been resolved'}
             </Alert>
 
-            {/* Photo Upload Area */}
             <Box sx={{ mb: 2 }}>
               <input
                 type="file"
                 accept="image/*"
-                multiple
                 onChange={handlePhotoUpload}
                 ref={fileInputRef}
                 style={{ display: 'none' }}
@@ -823,41 +838,86 @@ export const DriverPortal: React.FC = () => {
                   fullWidth
                   sx={{ py: 2 }}
                 >
-                  Add Photos
+                  Choose Photo
                 </Button>
               </label>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                You can select multiple photos (JPG, PNG, GIF)
-              </Typography>
             </Box>
 
-            {/* Photo Preview */}
-            {photoType === 'before' && renderPhotoPreviews(getBeforePhotoUrls(), 'before', currentComplaintType)}
-            {photoType === 'after' && renderPhotoPreviews(getAfterPhotoUrls(), 'after', currentComplaintType)}
-
-            {((photoType === 'before' && getBeforePhotos().length > 0) ||
-             (photoType === 'after' && getAfterPhotos().length > 0)) && (
-              <Alert severity="success" sx={{ mt: 2 }}>
-                {photoType === 'before' && `${getBeforePhotos().length} before photo(s) captured`}
-                {photoType === 'after' && `${getAfterPhotos().length} after photo(s) captured`}
-              </Alert>
+            {photoType === 'before' && beforePhotoPreview && (
+              <Box sx={{ textAlign: 'center' }}>
+                <img
+                  src={beforePhotoPreview}
+                  alt="Before preview"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: 300,
+                    borderRadius: 8,
+                  }}
+                />
+              </Box>
+            )}
+            {photoType === 'after' && afterPhotoPreview && (
+              <Box sx={{ textAlign: 'center' }}>
+                <img
+                  src={afterPhotoPreview}
+                  alt="After preview"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: 300,
+                    borderRadius: 8,
+                  }}
+                />
+              </Box>
             )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowPhotoDialog(false)}>Close</Button>
-          <Button 
-            variant="contained" 
-            onClick={() => setShowPhotoDialog(false)}
-          >
+          <Button variant="contained" onClick={() => setShowPhotoDialog(false)}>
             Done
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Floating Action Button for Emergency */}
-      <Fab 
-        color="error" 
+      {/* Skip Stop Dialog */}
+      <Dialog
+        open={showSkipDialog}
+        onClose={() => setShowSkipDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Skip Stop</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            Please provide a reason for skipping this stop.
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Reason"
+            value={skipReason}
+            onChange={(e) => setSkipReason(e.target.value)}
+            placeholder="e.g., Access blocked by parked car"
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowSkipDialog(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleSkipStop}
+            disabled={actionLoading || !skipReason.trim()}
+          >
+            Skip Stop
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Emergency FAB */}
+      <Fab
+        color="error"
         sx={{ position: 'fixed', bottom: 24, right: 24 }}
         onClick={() => alert('Emergency reported to dispatch!')}
       >
@@ -866,3 +926,5 @@ export const DriverPortal: React.FC = () => {
     </Container>
   );
 };
+
+export default DriverPortal;

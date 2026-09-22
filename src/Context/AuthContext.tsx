@@ -1,96 +1,129 @@
-import React, { createContext, useState, useContext, useMemo, useEffect } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useMemo,
+  useEffect,
+} from 'react';
 import type { ReactNode } from 'react';
+import { authService } from '../Services/authService';
 import type { User } from '../Services/types';
 
+// ============================================
+// AUTH CONTEXT TYPE
+// ============================================
 interface AuthContextType {
   user: User | null;
+  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: (googleData: any) => Promise<void>;
-  logout: () => void;
+  loginWithGoogle: (idToken: string) => Promise<void>;
+  logout: () => Promise<void>;
+  updateUser: (updatedFields: Partial<User>) => void;
   isAuthenticated: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ============================================
+// AUTH PROVIDER
+// ============================================
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Initialize user from localStorage if it exists
-  const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('cwms_user');
-    if (savedUser) {
-      try {
-        return JSON.parse(savedUser);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Save user to localStorage whenever it changes
+  // ============================================
+  // INITIAL LOAD — restore user from localStorage
+  // and verify with backend
+  // ============================================
   useEffect(() => {
-    if (user) {
-      localStorage.setItem('cwms_user', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('cwms_user');
-    }
-  }, [user]);
+    const initAuth = async () => {
+      const storedUser = authService.getStoredUser();
+      const token = localStorage.getItem('cleantrack_access_token');
 
-  // For Admin and Drivers - Manual login with credentials
+      if (storedUser && token) {
+        // Set user immediately from localStorage (fast)
+        setUser(storedUser);
+
+        // Then verify with backend (background)
+        try {
+          const freshUser = await authService.getMe();
+          setUser(freshUser);
+          localStorage.setItem('cleantrack_user', JSON.stringify(freshUser));
+        } catch (error) {
+          // Token invalid — clear everything
+          console.warn('Auth verification failed:', error);
+          authService.logout();
+          setUser(null);
+        }
+      }
+
+      setLoading(false);
+    };
+
+    initAuth();
+  }, []);
+
+  // ============================================
+  // LOGIN
+  // ============================================
   const login = async (email: string, password: string) => {
-    if (!password || password.length < 6) {
-      throw new Error('Password must be at least 6 characters');
-    }
-    
-    // Check if user is admin or driver
-    const role = email.includes('admin') ? 'admin' : 
-                  email.includes('driver') ? 'driver' : null;
-    
-    // Prevent citizens from using email/password login
-    if (!role) {
-      throw new Error('Invalid credentials. Please use Google Sign-In for citizens.');
-    }
-    
-    const mockUser: User = {
-      id: '1',
-      name: email.split('@')[0],
-      email,
-      role,
-    };
-    setUser(mockUser);
+    const response = await authService.login({ email, password });
+    setUser(response.user);
   };
 
-  // For Citizens - Google Sign-In
-  const loginWithGoogle = async (googleData: any) => {
-    // Only citizens should use Google login
-    const mockUser: User = {
-      id: googleData.sub || 'google-id',
-      name: googleData.name || 'Google User',
-      email: googleData.email || 'google@user.com',
-      role: 'citizen', // Always citizen for Google users
-    };
-    setUser(mockUser);
+  // ============================================
+  // GOOGLE LOGIN
+  // ============================================
+  const loginWithGoogle = async (idToken: string) => {
+    const response = await authService.googleLogin(idToken);
+    setUser(response.user);
   };
 
-  const logout = () => {
+  // ============================================
+  // LOGOUT
+  // ============================================
+  const logout = async () => {
+    await authService.logout();
     setUser(null);
-    localStorage.removeItem('cwms_user');
   };
 
-  const contextValue = useMemo(() => ({
-    user,
-    login,
-    loginWithGoogle,
-    logout,
-    isAuthenticated: !!user
-  }), [user]);
+  // ============================================
+  // UPDATE USER (local + localStorage)
+  // ============================================
+  const updateUser = (updatedFields: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...updatedFields };
+      localStorage.setItem('cleantrack_user', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // ============================================
+  // CONTEXT VALUE
+  // ============================================
+  const contextValue = useMemo(
+    () => ({
+      user,
+      loading,
+      login,
+      loginWithGoogle,
+      logout,
+      updateUser,
+      isAuthenticated: !!user,
+    }),
+    [user, loading]
+  );
 
   return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
   );
 };
 
+// ============================================
+// USE AUTH HOOK
+// ============================================
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

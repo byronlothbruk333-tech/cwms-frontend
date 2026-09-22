@@ -14,6 +14,24 @@ import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../Context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
+// ============================================
+// TYPES
+// ============================================
+interface GoogleCredentialResponse {
+  credential?: string;
+  clientId?: string;
+  select_by?: string;
+}
+
+interface ApiError {
+  response?: {
+    data?: {
+      message?: string;
+      error?: string;
+    };
+  };
+}
+
 export const Login: React.FC = () => {
   const { login, loginWithGoogle, user } = useAuth();
   const navigate = useNavigate();
@@ -29,6 +47,9 @@ export const Login: React.FC = () => {
     }
   }, [user, navigate]);
 
+  // ============================================
+  // EMAIL/PASSWORD LOGIN
+  // ============================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -38,29 +59,49 @@ export const Login: React.FC = () => {
       await login(email, password);
       // The useEffect above will handle the redirect
     } catch (err) {
-      setError('Invalid email or password. Please try again.');
+      const response = (err as ApiError)?.response?.data;
+      setError(
+        response?.message ||
+          response?.error ||
+          'Invalid email or password. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle Google Login Success
-  const handleGoogleSuccess = async (credentialResponse: any) => {
+  // ============================================
+  // GOOGLE LOGIN SUCCESS
+  // ✅ Pass the credential STRING to the backend
+  // ============================================
+  const handleGoogleSuccess = async (
+    credentialResponse: GoogleCredentialResponse
+  ) => {
     try {
       setError('');
-      // Decode the JWT to get user info
-      const decoded = JSON.parse(atob(credentialResponse.credential.split('.')[1]));
-      console.log('Google User Info:', decoded);
-      
-      // Call loginWithGoogle from AuthContext
-      await loginWithGoogle(decoded);
+
+      // Ensure we have a credential string
+      if (!credentialResponse?.credential) {
+        setError('Google sign-in failed. No credential received.');
+        return;
+      }
+
+      // ✅ Pass ONLY the credential JWT string to the backend
+      await loginWithGoogle(credentialResponse.credential);
       // The useEffect above will handle the redirect
     } catch (err) {
-      setError('Google sign-in failed. Please try again.');
+      const response = (err as ApiError)?.response?.data;
+      setError(
+        response?.message ||
+          response?.error ||
+          'Google sign-in failed. Please try again.'
+      );
     }
   };
 
-  // Handle Google Login Failure
+  // ============================================
+  // GOOGLE LOGIN FAILURE
+  // ============================================
   const handleGoogleError = () => {
     setError('Google sign-in failed. Please try again.');
   };
@@ -70,7 +111,7 @@ export const Login: React.FC = () => {
       <Paper elevation={3} sx={{ p: 4 }}>
         <Box sx={{ textAlign: 'center', mb: 4 }}>
           <Typography variant="h4" gutterBottom>
-            🌍 CWMS
+            🌍 CleanTrack
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Sign in to access your dashboard
@@ -114,6 +155,7 @@ export const Login: React.FC = () => {
             margin="normal"
             required
             autoFocus
+            autoComplete="email"
           />
           <TextField
             fullWidth
@@ -123,6 +165,7 @@ export const Login: React.FC = () => {
             onChange={(e) => setPassword(e.target.value)}
             margin="normal"
             required
+            autoComplete="current-password"
           />
           <Button
             type="submit"
@@ -135,7 +178,6 @@ export const Login: React.FC = () => {
             {loading ? <CircularProgress size={24} /> : 'Sign In'}
           </Button>
         </form>
-
       </Paper>
     </Container>
   );

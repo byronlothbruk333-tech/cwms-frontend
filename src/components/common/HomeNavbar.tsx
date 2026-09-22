@@ -18,7 +18,7 @@ interface HomeNavbarProps {
   title?: string;
 }
 
-export const HomeNavbar: React.FC<HomeNavbarProps> = ({ title = 'CWMS' }) => {
+export const HomeNavbar: React.FC<HomeNavbarProps> = ({ title = 'CleanTrack' }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();

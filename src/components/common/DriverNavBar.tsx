@@ -24,7 +24,7 @@ interface DriverNavbarProps {
   title?: string;
 }
 
-export const DriverNavbar: React.FC<DriverNavbarProps> = ({ title = 'CWMS' }) => {
+export const DriverNavbar: React.FC<DriverNavbarProps> = ({ title = 'CleanTrack' }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -111,9 +111,9 @@ export const DriverNavbar: React.FC<DriverNavbarProps> = ({ title = 'CWMS' }) =>
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             >
-              <MenuItem onClick={() => { navigate('/profile'); handleMenuClose(); }}>
-                <Person sx={{ mr: 1 }} /> Profile
-              </MenuItem>
+             <MenuItem onClick={() => { navigate('/driver/profile'); handleMenuClose(); }}>
+  <Person sx={{ mr: 1 }} /> Profile
+</MenuItem>
               <MenuItem onClick={() => { navigate('/driver'); handleMenuClose(); }}>
                 <Dashboard sx={{ mr: 1 }} /> Dashboard
               </MenuItem>

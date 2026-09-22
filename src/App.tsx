@@ -8,20 +8,22 @@ import { HomeNavbar } from './components/common/HomeNavbar';
 import { LoginNavbar } from './components/common/LoginNavbar';
 import { CitizenPortal } from './components/Citizen/CitizenPortal';
 import { DriverPortal } from './components/Driver/DriverPortal';
+import { DriverProfile } from './components/Driver/DriverProfile';
 import { AdminDashboard } from './components/Admin/AdminDashboard';
 import { Login } from './Pages/Login';
-import { Profile } from './Pages/Profile';
+import { CitizenProfile } from './components/Citizen/CitizenProfile';
 import { Dashboard } from './Pages/Dashboard';
 import { Home } from './Pages/Home';
-import { GoogleOAuthProvider } from '@react-oauth/google'; 
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AdminNavbar } from './components/common/AdminNavbar';
 import { CitizenNavbar } from './components/common/CitizenNavBar';
 import { DriverNavbar } from './components/common/DriverNavBar';
 import { RouteView } from './components/Admin/ViewRoute';
 import { ReportTracking } from './components/Citizen/ReportTracking';
 import { ScheduleLookup } from './components/Citizen/scheduleLookup';
-// FIX: Remove .tsx extension from imports
-
+import { TruckRegistry } from './components/Admin/TruckRegistry';
+import { LiveMap } from './components/Admin/LiveMap';
+import { ComplaintDetail } from './components/Admin/ComplaintDetail';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
@@ -52,12 +54,12 @@ const ConditionalNavbar: React.FC = () => {
     return <HomeNavbar />;
   }
 
-  if(path === '/login'){
+  if (path === '/login') {
     return <LoginNavbar />;
   }
 
-  // Role-based navbars
-  if (user?.role === 'admin') {
+  // Admin & Management share the same navbar
+  if (user?.role === 'admin' || user?.role === 'management') {
     return <AdminNavbar />;
   }
 
@@ -65,30 +67,50 @@ const ConditionalNavbar: React.FC = () => {
     return <DriverNavbar />;
   }
 
-   if (user?.role === 'citizen') {
-    return <CitizenNavbar/>;
+  if (user?.role === 'citizen') {
+    return <CitizenNavbar />;
   }
-  
+
   return null;
 };
 
 const AppContent: React.FC = () => {
-  const { user } = useAuth();
-
   return (
     <>
       <ConditionalNavbar />
-      
+
       <Routes>
-        {/* Public routes */}
+        {/* ==================== PUBLIC ROUTES ==================== */}
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<Home />} />
-        
-        {/* Profile & Dashboard routes */}
-        <Route path="/profile" element={<Profile />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        
-        {/* Citizen Routes */}
+
+        {/* ==================== CITIZEN ROUTES ==================== */}
+        {/* ✅ Specific routes FIRST, then catch-all */}
+        <Route
+          path="/citizen/profile"
+          element={
+            <ProtectedRoute allowedRoles={['citizen']}>
+              <CitizenProfile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/citizen/reports"
+          element={
+            <ProtectedRoute allowedRoles={['citizen']}>
+              <ReportTracking />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/citizen/ScheduleLookup"
+          element={
+            <ProtectedRoute allowedRoles={['citizen']}>
+              <ScheduleLookup />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/citizen/*"
           element={
@@ -97,34 +119,43 @@ const AppContent: React.FC = () => {
             </ProtectedRoute>
           }
         />
-{/* Citizen Report Tracking Dashboard Route */}
+
+       {/* ==================== DRIVER ROUTES ==================== */}
 <Route
-  path="/citizen/reports"
+  path="/driver/profile"
   element={
-    <ProtectedRoute allowedRoles={['citizen']}>
-      <ReportTracking />
+    <ProtectedRoute allowedRoles={['driver']}>
+      <DriverProfile />
     </ProtectedRoute>
   }
 />
-{/* Citizen Schedule Collection Dashboard Route */}
 <Route
-  path="/citizen/ScheduleLookup"
+  path="/driver/*"
   element={
-    <ProtectedRoute allowedRoles={['citizen']}>
-      <ScheduleLookup />
+    <ProtectedRoute allowedRoles={['driver']}>
+      <DriverPortal />
     </ProtectedRoute>
   }
 />
-        {/* Driver Routes */}
+
+        {/* ==================== ADMIN ROUTES ==================== */}
+        {/* ✅ Specific routes FIRST, then catch-all */}
         <Route
-          path="/driver/*"
+          path="/admin/trucks"
           element={
-            <ProtectedRoute allowedRoles={['driver']}>
-              <DriverPortal />
+            <ProtectedRoute allowedRoles={['admin', 'management']}>
+              <TruckRegistry />
             </ProtectedRoute>
           }
         />
-       
+        <Route
+          path="/admin/map"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'management']}>
+              <LiveMap />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/route/:truckId"
           element={
@@ -133,8 +164,14 @@ const AppContent: React.FC = () => {
             </ProtectedRoute>
           }
         />
-        
-        {/* Admin Routes */}
+        <Route
+          path="/admin/complaint/:id"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'management']}>
+              <ComplaintDetail />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/*"
           element={
@@ -143,6 +180,9 @@ const AppContent: React.FC = () => {
             </ProtectedRoute>
           }
         />
+
+        {/* ==================== FALLBACK ==================== */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

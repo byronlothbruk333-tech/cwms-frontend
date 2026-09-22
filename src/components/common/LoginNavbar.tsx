@@ -10,7 +10,7 @@ import {
   Menu,
   MenuItem,
 } from '@mui/material';
-import { Menu as MenuIcon, Home, Login } from '@mui/icons-material';
+import { Menu as MenuIcon, Home, } from '@mui/icons-material';
 import { useAuth } from '../../Context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -18,7 +18,7 @@ interface LoginNavbarProps {
   title?: string;
 }
 
-export const LoginNavbar: React.FC<LoginNavbarProps> = ({ title = 'CWMS' }) => {
+export const LoginNavbar: React.FC<LoginNavbarProps> = ({ title = 'CleanTrack' }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();

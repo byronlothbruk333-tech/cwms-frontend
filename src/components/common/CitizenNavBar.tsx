@@ -21,7 +21,6 @@ import {
   ExitToApp,
   Schedule as ScheduleIcon,
   Assignment as AssignmentIcon,
-  Assessment as AssessmentIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../Context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -30,7 +29,7 @@ interface CitizenNavbarProps {
   title?: string;
 }
 
-export const CitizenNavbar: React.FC<CitizenNavbarProps> = ({ title = 'CWMS' }) => {
+export const CitizenNavbar: React.FC<CitizenNavbarProps> = ({ title = 'CleanTrack' }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -130,7 +129,7 @@ export const CitizenNavbar: React.FC<CitizenNavbarProps> = ({ title = 'CWMS' }) 
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             >
-              <MenuItem onClick={() => { navigate('/profile'); handleMenuClose(); }}>
+              <MenuItem onClick={() => { navigate('/citizen/profile'); handleMenuClose(); }}>
                 <Person sx={{ mr: 1 }} /> Profile
               </MenuItem>
             </Menu>

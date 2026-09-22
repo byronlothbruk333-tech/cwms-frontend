@@ -4,6 +4,18 @@ export interface User {
   name: string;
   email: string;
   role: 'citizen' | 'driver' | 'admin' | 'management';
+  status?: 'active' | 'inactive' | 'suspended';
+  googleId?: string | null;
+  avatar?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  zone?: string | null;
+  emailNotifications?: boolean;
+  smsNotifications?: boolean;
+  deleted?: boolean;
+  deletedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // Truck Types
